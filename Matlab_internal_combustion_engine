@@ -1,0 +1,507 @@
+syms x y
+
+%take the cycle type
+type = input("What is the cycle type? (1 for otto, 2 for diesel, 3 for dual)\n ");
+
+
+%given parameters
+a = input("Crank Shaft Radius(mm) = ? \n ");
+a = a*10^-3; %m
+l = input("Connect Rod Length(mm) = ? \n ");  
+l = l*10^-3; %m
+sb = input("Stroke to Bore ration = ? \n ");
+Vc = input("Clearance Volume(cm^3) = ? \n ");
+Vc = Vc*10^-6; %m^3
+ER = input("Exhaust Residaul(%) = ? \n ");
+ER = ER/100;
+N = input("Engine Speed(rpm) = ? \n ");
+fi = input("Equivalance Ratio = ? \n ");
+Pa = input("Ambient Pressure(kPa) = ? \n "); 
+Ta = input("Ambiten Temperature(K) = ? \n ");
+etha_mechanical = input("Mechanical Efficiency (%) = ? \n ");
+etha_mechanical = etha_mechanical/100;
+etha_combustion = input("Combustion Efficiency (%) = ? \n ");
+etha_combustion = etha_combustion/100;
+
+if type == 3
+    cvhi = input("Constant Volume Heat Input (%) = ? \n ");
+    cvhi = cvhi/100;
+end
+
+%rotate per cycle
+nr = 2; %for 4 stroke engine
+
+%R and rho of air
+R = 0.287;
+density_air = 1.181; %kg/m^3
+k = 1.35;
+
+%bore
+B = 2*a/sb; %m
+
+%compression ratio
+Vd = 2*pi*a^3/sb^2; %m^3
+rc = (Vd + Vc)/Vc;
+
+
+switch type
+    %otto
+    case 1
+        %Kullanıcıdan iste 
+        Qhv = 44000; %kJ/kg olarak verilmei Heating Value -LHV
+        AFR = 14;
+        
+        %Mass inside cylinder ,mass flow rates
+        m_mix = Pa*(Vd+Vc)/(R*Ta); %kg
+        m_air = (AFR/(AFR + 1))*(1-ER)*m_mix; %kg
+        m_fuel = (1/(AFR + 1))*(1-ER)*m_mix; %kg
+        m_exhaust = ER*m_mix; %kg
+        
+        m_airrate = m_air*N/(nr*60); %kg/s
+        m_fuelrate = m_fuel*N/(nr*60);%kg/s
+        
+        %%% Pressure and Temperatures at all stations
+        eqn1 = (-2E-08)*x^2 + 0.0002*x + 0.6484*log(x) == (-2E-08)*Ta^2 + 0.0002*Ta + 0.6484*log(Ta) - R*log(Vc/(Vd+Vc));
+        T2 = vpasolve(eqn1,x) ;
+        
+        P2 = exp(((-2E-08)*T2^2 + 0.0002*T2 + 0.9354*log(T2)+ (2E-08)*Ta^2 - 0.0002*Ta - 0.9354*log(Ta))/R)*Pa; %kPa
+        
+        %Qhv verildiğini varsayıyoruz
+        eqn2 = -1.333E-08*y^3+0.0001*y^2 + 0.6484*y == -1.333E-08*T2^3+0.0001*T2^2 + 0.6484*T2 + etha_combustion*Qhv*m_fuel/m_mix;
+        T3 = vpasolve(eqn2,y); %K
+        T3 = T3(3);
+        
+        P3 = P2*T3/T2; %kPa
+        
+        eqn3 = (-2E-08)*x^2 + 0.0002*x + 0.6484*log(x) == (-2E-08)*(T3)^2 + 0.0002*(T3) + 0.6484*log(T3) - R*log(Vc/(Vd+Vc));
+        T4 = vpasolve(eqn3,x);
+        
+        P4 = exp(((-2E-08)*T4^2 + 0.0002*T4 + 0.9354*log(T4)+ (2E-08)*T3^2 - 0.0002*T3 - 0.9354*log(T3))/R)*P3;
+        %exhaust cycle
+        T6 = Ta;
+        P6 = Pa;
+        
+        %Wnet
+        Qin = etha_combustion*Qhv*m_fuel; %kJ
+        %%Qin_iterasyon = Qin_value;
+        %Qout = m_mix*cv*(T4-Ta);
+        Qout_iterasyon= Qout_value (T4,Ta,m_mix);
+        Wnet = Qin -Qout_iterasyon; %kJ
+        
+        %imep
+        imep = Wnet/Vd; %kPa
+        Power_i = Wnet*N/(nr*60); %kW 
+        
+        %break work, bmep        
+        Wb = etha_mechanical*Wnet; %kJ
+        Power_b = etha_mechanical*Power_i; %kW      
+        bmep = Wb/Vd; %kPa
+        
+        %Torque
+        Torque = Power_b/(2*pi*N); %kNm
+        
+        %brake specific power
+        bsp = Power_b*4/(pi*B^2); %kW/m^2
+        
+        %brake output per displacement
+        bopd = Power_b/Vd; %kW/m^3
+        
+        %bsfc
+        bsfc = m_fuel/Wb; % kg/kj
+        
+        %mean piston speed
+        Up = 4*a*N/60; %m/s
+        
+        %%% Thermal Efficiency
+        etha_thermal = 1 - (1/rc^(k-1));
+        
+        %Volumetric Efficiency
+        etha_volumetric = m_air/(density_air*Vd);
+        
+        %plotting the speed-crank angle graph
+        figure(1)
+        x = (-360:1:360);
+        temp1 = (l/a).^2-(sind(x)).^2;
+        PistonSpeed = Up*pi/2*sind(x)*(1+(cosd(x)/(temp1.^(1/2))));
+        plot(x,PistonSpeed);
+        xlabel('Degree Crank Angle');
+        ylabel('Piston Speed [m/s]');
+        
+        
+        %plotting the cylinder volume-crank angle
+        figure(2)
+        CylinderVolume = Vc*(1+(rc-1)/2*((l/a) + 1 - cosd(x) - (temp1).^(1/2)));
+        plot(x,CylinderVolume);
+        xlabel('Degree Crank Angle');
+        ylabel('Cylinder Volume [m^3]');
+        
+        %plotting the pressure - dca
+        figure(3)
+        theta_1 = -180 : 0.01 : 0;
+        temp2 = (l/a).^2-(sind(theta_1)).^2;
+        CylinderVolume_1 = Vc*(1+(rc-1)/2*((l/a) + 1 - cosd(theta_1) - (temp2).^(1/2)));
+        Plot_P2 =Pa * ((Vc+Vd)^k)./(CylinderVolume_1.^k);
+        plot(theta_1, Plot_P2, 'b');
+        hold on 
+        
+        %Wiebe (Qin,Vd,P2,l,a,Vc,rc,k);
+        
+        theta_2 = 0 : 0.01 : 180;
+        temp3 = (l/a).^2-(sind(theta_2)).^2;
+        CylinderVolume_2 = Vc*(1+(rc-1)/2*((l/a) + 1 - cosd(theta_2) - (temp3).^(1/2)));
+        Plot_P4 = P3*Vc^k./(CylinderVolume_2.^k);
+        plot(theta_2,Plot_P4,'r');
+        hold on
+        xlabel('Degree Crank Angle');
+        ylabel('Pressure [kPa]');
+        
+    
+    %diesel
+    case 2
+        %Kullanıcıdan iste 
+        Qhv = 42000; %kJ/kg olarak verilmei Heating Value -LHV
+        AFR = 8;
+        
+        %Mass inside cylinder ,mass flow rates
+        m_mix = Pa*(Vd+Vc)/(R*Ta); %kg
+        m_air = (AFR/(AFR + 1))*(1-ER)*m_mix; %kg
+        m_fuel = (1/(AFR + 1))*(1-ER)*m_mix; %kg
+        m_exhaust = ER*m_mix; %kg
+        
+        m_airrate = m_air*N/(nr*60); %kg/s
+        m_fuelrate = m_fuel*N/(nr*60);%kg/s
+        
+        %%% Pressure and Temperatures at all stations
+        eqn1 = (-2E-08)*x^2 + 0.0002*x + 0.6484*log(x) == (-2E-08)*Ta^2 + 0.0002*Ta + 0.6484*log(Ta) - R*log(Vc/(Vd+Vc));
+        T2 = vpasolve(eqn1,x) ;
+        
+        P2 = exp(((-2E-08)*T2^2 + 0.0002*T2 + 0.9354*log(T2)+ (2E-08)*Ta^2 - 0.0002*Ta - 0.9354*log(Ta))/R)*Pa; %kPa
+        %Qhv verildiğini varsay
+        eqn4 = -1.333E-08*x^3+0.0001*x^2 + 0.9354*x == -1.333E-08*T2^3+0.0001*T2^2 + 0.9354*T2 + etha_combustion*Qhv*m_fuel/m_mix;
+        T3 = vpasolve(eqn4,x);%K
+        T3 = T3(3);
+        
+        P3 = P2;%kPa
+        
+        beta = T3/T2;
+        
+        V3 = Vc *T3 /T2 ; 
+
+        eqn3 = (-2E-08)*x^2 + 0.0002*x + 0.6484*log(x) == (-2E-08)*(T3)^2 + 0.0002*(T3) + 0.6484*log(T3) - R*log(V3/(Vd+Vc));
+        T4 = vpasolve(eqn3,x);
+
+        P4 = exp(((-2E-08)*T4^2 + 0.0002*T4 + 0.9354*log(T4)+ (2E-08)*T3^2 - 0.0002*T3 - 0.9354*log(T3))/R)*P3;
+
+        %exhaust stroke
+        P6 = Pa;
+        T6 = Ta;
+        
+        %Wnet
+        Qin = etha_combustion*Qhv*m_fuel; %kJ
+        Qout_iterasyon= Qout_value(T4,Ta,m_mix);
+        Wnet = Qin -Qout_iterasyon; %kJ
+        
+        %imep
+        imep = Wnet/Vd; %kPa
+        Power_i = Wnet*N/(nr*60); %kW 
+        
+        %break work, bmep        
+        Wb = etha_mechanical*Wnet;
+        Power_b = etha_mechanical*Power_i;        
+        bmep = Wb/Vd; %kPa
+        
+        %Torque
+        Torque = Power_b/(2*pi*N);
+        
+        %brake specific power
+        bsp = Power_b*4/(pi*B^2);
+        
+        %brake output per displacement
+        bopd = Power_b/Vd;
+        
+        %bsfc
+        bsfc = m_fuel/Wb; % kg/kj
+        
+        %mean piston speed
+        Up = 4*a*N/60; %m/s
+        
+        %thermal efficiency
+        etha_thermal = 1 - ((beta^k) - 1)/((rc^(k-1))*k*(beta-1));
+        
+        %Volumetric Efficiency
+        etha_volumetric = m_air/(density_air*Vd);
+        
+        %plotting the speed-crank angle graph
+        figure(1)
+        x = (-360:1:360);
+        temp1 = (l/a).^2-(sind(x)).^2;
+        PistonSpeed = Up*pi/2*sind(x)*(1+(cosd(x)/(temp1.^(1/2))));
+        plot(x,PistonSpeed);
+        xlabel('Degree Crank Angle');
+        ylabel('Piston Speed [m/s]');
+        
+        %plotting the cylinder volume-crank angle
+        figure(2)
+        CylinderVolume = Vc*(1+(rc-1)/2*((l/a) + 1 - cosd(x) - (temp1).^(1/2)));
+        plot(x,CylinderVolume);
+        xlabel('Degree Crank Angle');
+        ylabel('Cylinder Volume [m^3]');
+        
+        %plotting the pressure - dca
+        figure(3)
+        theta_1 = -180 : 0.01 : 0;
+        temp2 = (l/a).^2-(sind(theta_1)).^2;
+        CylinderVolume_1 = Vc*(1+(rc-1)/2*((l/a) + 1 - cosd(theta_1) - (temp2).^(1/2)));
+        Plot_P2 =Pa * ((Vc+Vd)^k)./(CylinderVolume_1.^k);
+        plot(theta_1, Plot_P2, 'b');
+        hold on 
+        
+        %Wiebe (Qin,Vd,P2,l,a,Vc,rc,k);
+        
+        theta_2 = 0 : 0.01 : 180;
+        temp3 = (l/a).^2-(sind(theta_2)).^2;
+        CylinderVolume_2 = Vc*(1+(rc-1)/2*((l/a) + 1 - cosd(theta_2) - (temp3).^(1/2)));
+        Plot_P4 = P3*Vc^k./(CylinderVolume_2.^k);
+        plot(theta_2,Plot_P4,'r');
+        hold on 
+        xlabel('Degree Crank Angle');
+        ylabel('Pressure [kPa]');
+        
+    %dual
+    case 3
+        %Kullanıcıdan iste 
+        Qhv = 42000; %kJ/kg olarak verilmei Heating Value -LHV
+        AFR = 8;
+        
+        %Mass inside cylinder ,mass flow rates
+        m_mix = Pa*(Vd+Vc)/(R*Ta); %kg
+        m_air = (AFR/(AFR + 1))*(1-ER)*m_mix; %kg
+        m_fuel = (1/(AFR + 1))*(1-ER)*m_mix; %kg
+        m_exhaust = ER*m_mix; %kg
+        
+        m_airrate = m_air*N/(nr*60); %kg/s
+        m_fuelrate = m_fuel*N/(nr*60);%kg/s
+        
+
+        %%% Pressure and Temperatures at all stations
+        eqn1 = (-2E-08)*x^2 + 0.0002*x + 0.6484*log(x) == (-2E-08)*Ta^2 + 0.0002*Ta + 0.6484*log(Ta) - R*log(Vc/(Vd+Vc));
+        T2 = vpasolve(eqn1,x) ;
+        P2 = exp(((-2E-08)*T2^2 + 0.0002*T2 + 0.9354*log(T2)+ (2E-08)*Ta^2 - 0.0002*Ta - 0.9354*log(Ta))/R)*Pa; %kPa
+        
+        %From Heating Value Assumptions
+        
+        eqn4 = -1.333E-08*x^3+0.0001*x^2 + 0.6484*x == -1.333E-08*T2^3+0.0001*T2^2 + 0.6484*T2 +cvhi*etha_combustion*Qhv*m_fuel/m_mix;
+        T3 = vpasolve(eqn4,x);%K
+        T3 = T3(2);
+        
+        eqn5 = -1.333E-08*x^3+0.0001*x^2 + 0.9354*x == -1.333E-08*T3^3+0.0001*T3^2 + 0.9354*T3 +(1-cvhi)*etha_combustion*Qhv*m_fuel/m_mix;
+        T4 = vpasolve(eqn5,x);%K
+        T4 = T4(3);
+        
+        alfa = T3/T2;
+        P3 = P2*alfa;
+        %T4 = T3 + ((1-cvhi)*etha_combustion*m_fuel*Qhv)/(m_mix*cp);
+        P4 = P3;
+        beta = T4/T3;
+        V4 = Vc * beta ; 
+        eqn6 = (-2E-08)*x^2 + 0.0002*x + 0.6484*log(x) == (-2E-08)*(T4)^2 + 0.0002*(T4) + 0.6484*log(T4) - R*log(V4/(Vd+Vc));
+        T5 = vpasolve(eqn6,x);
+
+        P5 = exp(((-2E-08)*T5^2 + 0.0002*T5 + 0.9354*log(T5)+ (2E-08)*T4^2 - 0.0002*T4 - 0.9354*log(T4))/R)*P4;
+
+        %exhaust stroke
+        P6 = Pa;
+        T6 = Ta;
+        
+        %Wnet
+        Qin = etha_combustion * Qhv * m_fuel;
+        
+        Qout =  Qout_value (T5 , Ta ,m_mix) ;
+        Wnet = Qin - Qout;
+        
+        %imep
+        imep = Wnet/Vd; %kPa
+        Power_i = Wnet*N/(nr*60); %kW 
+        
+        %break work, bmep        
+        Wb = etha_mechanical*Wnet;
+        Power_b = etha_mechanical*Power_i;        
+        bmep = Wb/Vd; %kPa
+        
+        %Torque
+        Torque = Power_b/(2*pi*N);
+        
+        %brake specific power
+        bsp = Power_b*4/(pi*B^2);
+        
+        %brake output per displacement
+        bopd = Power_b/Vd;
+        
+        %bsfc
+        bsfc = m_fuel/Wb; % kg/kj
+        
+        %mean piston speed
+        Up = 4*a*N/60; %m/s
+        
+        %thermal efficiency
+        t1 = rc^(1-k);
+        t2 = alfa*(beta)^k - 1;
+        t3 = alfa - 1 + (k*alfa*(beta-1));
+        etha_thermal = 1- t1*t2/t3;
+        
+        %Volumetric Efficiency
+        etha_volumetric = m_air/(density_air*Vd);
+        
+        %plotting the speed-crank angle graph
+        figure(1)
+        x = (-360:1:360);
+        temp1 = (l/a).^2-(sind(x)).^2;
+        PistonSpeed = Up*pi/2*sind(x)*(1+(cosd(x)/(temp1.^(1/2))));
+        plot(x,PistonSpeed);
+        xlabel('Degree Crank Angle');
+        ylabel('Piston Speed [m/s]');
+        
+        %plotting the cylinder volume-crank angle
+        figure(2)
+        CylinderVolume = Vc*(1+(rc-1)/2*((l/a) + 1 - cosd(x) - (temp1).^(1/2)));
+        plot(x,CylinderVolume);
+        xlabel('Degree Crank Angle');
+        ylabel('Cylinder Volume [m^3]');
+        
+        %plotting the pressure - dca
+        figure(3)
+        theta_1 = -180 : 0.01 : 0;
+        temp2 = (l/a).^2-(sind(theta_1)).^2;
+        CylinderVolume_1 = Vc*(1+(rc-1)/2*((l/a) + 1 - cosd(theta_1) - (temp2).^(1/2)));
+        Plot_P2 =Pa * ((Vc+Vd)^k)./(CylinderVolume_1.^k);
+        plot(theta_1, Plot_P2, 'b');
+        hold on 
+        
+        %Wiebe (Qin,Vd,P2,l,a,Vc,rc,k);
+        
+        theta_2 = 0 : 0.01 : 180;
+        temp3 = (l/a).^2-(sind(theta_2)).^2;
+        CylinderVolume_2 = Vc*(1+(rc-1)/2*((l/a) + 1 - cosd(theta_2) - (temp3).^(1/2)));
+        Plot_P5 = P4*Vc^k./(CylinderVolume_2.^k);
+        plot(theta_2,Plot_P5,'r');
+        hold on 
+        xlabel('Degree Crank Angle');
+        ylabel('Pressure [kPa]');
+        
+end
+
+%%%%%%%%%%%%%%%%%%% Functions %%%%%%%%%%%%%%%%%%%%%%%%%       
+
+%--------Qin Hesaplama
+%Qin = m_fuel*Qhv*etha_combustion;
+
+function  Qin_iterasyon = Qin_value (temp_T2,temp_T3,m_mix)
+
+Qin_iterasyon_1 = 0 ;
+
+for Temp =temp_T2:temp_T3
+    temp_cv= (-4E-08*temp_T2^2 + 0.0002*temp_T2 + 0.9354);
+    Qin_iterasyon= m_mix * temp_cv  * 1  ;
+    Qin_iterasyon =Qin_iterasyon+ Qin_iterasyon_1;
+    Qin_iterasyon_1 = Qin_iterasyon;
+    temp_T2 =temp_T2+ 1;
+    %fprintf ('Qin hesaplanan= %d ,T2= %d ,Temp cv = %d \n' , Qin_iterasyon , temp_T2, temp_cv );
+
+end
+
+end
+
+
+%------------Qout Hesaplama
+%Qout_iterasyon= Qout_value (434,Ta,m_mix)
+                                         
+function  Qout_iterasyon =  Qout_value (temp_T4,temp_Ta,m_mix)
+    if temp_Ta<temp_T4
+        Qout_iterasyon_1 = 0 ;
+        for Temp =temp_Ta:temp_T4
+            temp_cv= (-4E-08*temp_Ta^2 + 0.0002*temp_Ta + 0.9354);
+            Qout_iterasyon= m_mix * temp_cv  * 1  ;
+            Qout_iterasyon =Qout_iterasyon+ Qout_iterasyon_1;
+            Qout_iterasyon_1 = Qout_iterasyon;
+            temp_Ta =temp_Ta + 1;
+            %fprintf ('Qin hesaplanan= %d ,T2= %d ,Temp cv = %d \n' , Qin_iterasyon , temp_T2, temp_cv );
+            
+        end
+         
+    elseif temp_T4<temp_Ta
+        gecici= temp_Ta;
+        temp_Ta =temp_T4;
+        temp_T4 = gecici;
+        for Temp =temp_Ta:temp_T4
+            temp_cv= (-4E-08*temp_Ta^2 + 0.0002*temp_Ta + 0.9354);
+            Qout_iterasyon= m_mix * temp_cv  * 1  ;
+            Qout_iterasyon =Qout_iterasyon+ Qout_iterasyon_1;
+            Qout_iterasyon_1 = Qout_iterasyon;
+            temp_Ta =temp_Ta + 1;
+            %fprintf ('Qin hesaplanan= %d ,T2= %d ,Temp cv = %d \n' , Qin_iterasyon , temp_T2, temp_cv );
+            
+        end
+    end
+end
+
+%{ 
+------------------ Attempted Wiebe Function-------------------------
+function Wiebe (Qin,Vd,Pa,rod_lengt,cam_rad,Vc,rc,k)
+%%Theta =(-20:1:20);
+a =(5) ;
+n =3 ;
+r =(rod_lengt/cam_rad);
+l=rod_lengt;
+Gama =(1.35);
+Theta_start =(-20) ;
+Theta_duration =(40) ;
+Theta_son = Theta_duration ;
+don= 0; 
+
+figure(3)
+        % angle from 0 to 2pi
+
+        theta_1 = -180 : 0.01 : -20;
+        temp2 = (r).^2-(sind(theta_1)).^2;
+        CylinderVolume_1 = Vc*(1+(rc-1)/2*((l/a) + 1 - cosd(theta_1) - (temp2).^(1/2)));
+        Plot_P2 =Pa * ((Vc+Vd)^k)./(CylinderVolume_1.^k);
+        plot(theta_1, Plot_P2, 'b');
+        hold on
+
+
+
+    for angle =Theta_start:Theta_son-1
+    pressure_angle =@(Theta, Theta_start ,Theta_duration,n,Gama,Pa,Vd,r,Qin,a) -Gama.* (Pa/Vd)*(((Vd/2).*sind(Theta).*(1+(cosd(Theta).*((r^2)-(sind(Theta).^2).^(-1/2))))))+(((Gama-1)/Vd).*((Qin *((n.*a/Theta_duration)*(1-(1-exp(-a*((Theta-Theta_start)/Theta_duration).^n)).*((Theta-Theta_start)/Theta_duration).^(n-1))))));
+    value_1(don)= integral(@(Theta) pressure_angle (Theta, Theta_start ,Theta_duration,n,Gama,Pa,Vd,r,Qin,a),-20,20);
+    Theta_start = Theta_start + 1;
+    don = don +1  
+    end
+    
+    hold on 
+    theta_3 = -20 : 1 : 20;
+    theta_4 = 0: 1 : length(don);
+    plot(theta_3,value_1(theta_4),'r');
+
+
+
+        theta_2 = 20 : 0.01 : 180;
+        temp3 = (l/a).^2-(sind(theta_2)).^2;
+        CylinderVolume_2 = Vc*(1+(rc-1)/2*((l/a) + 1 - cosd(theta_2) - (temp3).^(1/2)));
+        Plot_P4 = P3*Vc^k./(CylinderVolume_2.^k);
+        plot(theta_2,Plot_P4,'r');
+        hold on 
+        %{
+        theta_3 = 0.01 : 0.01 : 180;
+        temp1 = (l/a).^2-(sind(theta_3)).^2;
+        CylinderVolume = Vc*(1+(rc-1)/2*((l/a) + 1 - cosd(theta_3) - (temp1).^(1/2)));
+        Plot_P4 =P3 * ((Vc+Vd)^k)./CylinderVolume.^k;
+        plot(theta_3, Plot_P4, 'g')
+        %}
+        
+        xlabel('crank angle');
+        ylabel('pressure');
+        title('asdasdad')
+
+
+end
+%}
